@@ -15,11 +15,7 @@ No issues found.
 
 ### D2. Step-by-step completeness
 
-1. ~~**[Medium]** Line 250: "Start the `Qwen code` coding agent in the terminal inside the project directory" provides no link or reference to setup/installation instructions for the tool. A student unfamiliar with `Qwen code` would not know what command to run or how to launch it.
-   **Suggested fix:** Add a link to a wiki page explaining how to install and start the agent (e.g., `[Start the \`Qwen code\` coding agent](../../../wiki/qwen-code.md#start-the-agent)`), or inline the startup command.~~
-
-2. ~~**[Low]** Lines 336, 340, 344: Steps say "try `GET /items/`", "Try `GET /learners/`", "Try `GET /interactions/`" using the vague verb "try", unlike [step 1.4.3](lab/tasks/required/task-1.md#143-run-and-test-locally) (line 291) which uses explicit Swagger UI instructions ("expand ..., click `Try it out`, then `Execute`").
-   **Suggested fix:** Use consistent phrasing such as "expand `GET /items/`, click `Try it out`, then `Execute`", or reference the interaction pattern established in step 1.4.3.~~
+No issues found.
 
 ### D3. Student navigation
 
@@ -27,8 +23,7 @@ No issues found.
 
 ### D4. Checkpoints and feedback loops
 
-1. ~~**[Low]** Line 416: [Step 1.4.7](lab/tasks/required/task-1.md#147-update-and-test-on-the-vm) checkpoint says "You should get `200` with `new_records` and `total_records`" but does not show an expected JSON response body, unlike [step 1.4.3](lab/tasks/required/task-1.md#143-run-and-test-locally) (lines 293–300) and [step 1.4.5](lab/tasks/required/task-1.md#145-test-idempotency-locally) (lines 356–361) which include exact expected JSON.
-   **Suggested fix:** Add an expected JSON response block for consistency with other checkpoints.~~
+No issues found.
 
 ### D5. Acceptance criteria alignment
 
@@ -40,13 +35,11 @@ No issues found.
 
 ### D7. Practical usability
 
-1. ~~**[Medium]** Line 250: No setup instructions or wiki link for the `Qwen code` coding agent. Students who haven't installed or configured the tool would be blocked without external help. (Same root cause as D2 finding #1, manifesting as a usability gap.)
-   **Suggested fix:** Add a prerequisite link or reference to a wiki page with installation and launch instructions.~~
+No issues found.
 
 ### D8. LLM-independence
 
-1. ~~**[Medium]** Lines 250–273 ([step 1.4.2](lab/tasks/required/task-1.md#142-implement-the-pipeline)): The implementation step relies entirely on an AI coding agent. The task does not explicitly state that AI is required for this step, nor does it provide an alternative path (placeholder templates, step-by-step coding instructions) for students who choose not to use AI. Convention 4.16 requires tasks to be completable without LLMs unless AI use is explicitly stated.
-   **Suggested fix:** Either (a) add placeholder code or step-by-step implementation guidance as a non-AI path, or (b) explicitly state that this step requires AI and label it as an AI-required part per convention 4.16.~~
+No issues found.
 
 ### D9. Git workflow coherence
 
@@ -76,8 +69,7 @@ No issues found.
 
 ### 4.2. Terminal commands
 
-1. ~~**[Medium]** Lines 391–401: Git commands (`cd`, `git fetch`, `git checkout`, `git pull`) and `docker compose up --build -d` are combined in a single terminal block under one "To pull your branch and restart the services on your VM" intention. Convention (tasks.md Section 3, line 194) explicitly states: "`git pull` (version control) and `docker compose up` (container management) must be separate steps even when run in sequence."
-   **Suggested fix:** Split into two steps — one for git operations ("To update to your task branch on the VM") and one for Docker ("To rebuild and start the services").~~
+No issues found.
 
 ### 4.3. Command Palette commands
 
@@ -141,12 +133,7 @@ Not applicable.
 
 ### 4.18. Inline formatting of technical terms
 
-1. ~~**[Medium]** Line 13: "Autochecker API" — `Autochecker` is a tool name and must be backticked: `` `Autochecker` API ``.~~
-2. ~~**[Medium]** Line 116: "the Autochecker API" — same issue: `` the `Autochecker` API ``.~~
-3. ~~**[Medium]** Line 132: "Autochecker bot" — same issue: `` `Autochecker` bot ``.~~
-4. ~~**[Low]** Line 302: "the Autochecker" — same issue: `` the `Autochecker` ``.~~
-5. ~~**[Low]** Line 322: Inside `<h4>` tag, "Autochecker" should use `<code>Autochecker</code>` (backticks don't render inside HTML tags).~~
-6. ~~**[Medium]** Line 328: "autochecker" is both lowercase and unformatted inside `<h4>` tag. Should be `<code>Autochecker</code>` with correct capitalization.~~
+No issues found.
 
 ### 4.19. Steps with sub-steps
 
@@ -187,8 +174,7 @@ Not applicable.
 
 ### Recovery guidance (tasks.md 4.19)
 
-1. ~~**[High]** Line 326: Duplicate empty `<h4>500 Internal Server Error</h4>` heading inside the troubleshooting block. This heading has no content — it is immediately followed by `<h4>Connection refused to the autochecker API</h4>` on line 328. Appears to be an editing artifact.
-   **Suggested fix:** Remove the duplicate empty `<h4>500 Internal Server Error</h4>` on line 326.~~
+No issues found.
 
 ---
 
@@ -200,7 +186,7 @@ No TODOs found.
 
 ## Empty sections
 
-1. ~~Line 326: `<h4>500 Internal Server Error</h4>` — empty heading inside the troubleshooting block (immediately followed by `<h4>Connection refused to the autochecker API</h4>` with no content in between).~~
+No empty sections found.
 
 ---
 
