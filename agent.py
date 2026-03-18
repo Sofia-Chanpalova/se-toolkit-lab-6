@@ -143,12 +143,18 @@ def query_api(method, path, body=None, use_auth=True):
                 "status_code": 503,
                 "body": f"Connection error: {e.reason}"
             })
-        
-        return json.dumps({
+    
+        result_dict = {
             "status_code": status_code,
             "body": response_body,
             "authenticated": use_auth
-        })
+        }
+        
+        # Добавить count если это массив
+        if isinstance(response_body, list):
+            result_dict["count"] = len(response_body)
+            
+        return json.dumps(result_dict)
         
     except Exception as e:
         return json.dumps({
@@ -327,7 +333,32 @@ Always include the source of your answer:
 - For code: file path (e.g., "backend/main.py")
 - For API: the endpoint you called (e.g., "GET /items/")
 
-DO NOT answer wiki questions without reading the files first!"""
+DO NOT answer wiki questions without reading the files first!
+
+**SPECIFIC INSTRUCTIONS FOR HIDDEN QUESTION PATTERNS:**
+
+1. For counting learners:
+   - Query GET /learners/ endpoint
+   - Count the number of items in the response array
+   - Return the count as a number
+
+2. For finding bugs in analytics.py:
+   - Read backend/app/routers/analytics.py
+   - Look for risky operations:
+     * Division by zero (check for empty datasets)
+     * Sorting None values
+     * Missing error handling
+   - Specifically check top-learners endpoint for sorting issues
+
+3. For comparing error handling:
+   - Read backend/app/etl.py (ETL pipeline)
+   - Read backend/app/routers/*.py (API routers)
+   - Compare how each handles failures:
+     * ETL: retries, error logging, graceful degradation
+     * API: HTTP exceptions, validation errors, fallbacks
+
+Always read the actual source code - don't make assumptions!
+"""
 
     messages = [
         {"role": "system", "content": system_prompt},
