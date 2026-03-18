@@ -1,26 +1,49 @@
 #!/usr/bin/env python3
 """
 System Agent with API query capabilities.
+Using only built-in modules - no external dependencies.
 """
 
 import os
 import sys
 import json
-import requests
-from dotenv import load_dotenv
-import argparse
+import urllib.request
+import urllib.error
+import urllib.parse
 from pathlib import Path
-
-# Load environment variables
-load_dotenv('.env.agent.secret')
+import re
 
 # Constants
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 MAX_TOOL_CALLS = 10
 
+# Load environment variables manually
+def load_env_file(filename):
+    """Load environment variables from .env file manually."""
+    try:
+        with open(filename, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    os.environ[key] = value
+    except FileNotFoundError:
+        pass
+
+# Load .env files
+load_env_file('.env.agent.secret')
+load_env_file('.env.docker.secret')
+
 # API configuration
-LMS_API_KEY = os.getenv('LMS_API_KEY')
-AGENT_API_BASE_URL = os.getenv('AGENT_API_BASE_URL', 'http://localhost:42002')
+LMS_API_KEY = os.environ.get('LMS_API_KEY', '')
+AGENT_API_BASE_URL = os.environ.get('AGENT_API_BASE_URL', 'http://localhost:42001')
+LLM_API_KEY = os.environ.get('LLM_API_KEY', '')
+LLM_API_BASE = os.environ.get('LLM_API_BASE', '')
+LLM_MODEL = os.environ.get('LLM_MODEL', 'qwen3-coder-plus')
 
 def list_files(path=""):
     """List files and directories at the given path."""
@@ -79,52 +102,52 @@ def read_file(path):
     except Exception as e:
         return f"Error reading file: {str(e)}"
 
-def query_api(method, path, body=None):
-    """Call the deployed backend API."""
+def query_api(method, path, body=None, use_auth=True):
+    """Call the deployed backend API using only built-in urllib."""
     try:
-        if not LMS_API_KEY:
-            return json.dumps({
-                "status_code": 500,
-                "body": "Error: LMS_API_KEY not configured"
-            })
-        
         # Construct full URL
         base = AGENT_API_BASE_URL.rstrip('/')
         url = f"{base}/{path.lstrip('/')}"
         
-        print(f"  Calling API: {method} {url}", file=sys.stderr)
-        
-        # Prepare headers
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {LMS_API_KEY}" 
-        }
+        print(f"  Calling API: {method} {url} (auth={use_auth})", file=sys.stderr)
         
         # Prepare request
-        kwargs = {
-            "method": method,
-            "url": url,
-            "headers": headers,
-            "timeout": 10
-        }
+        req = urllib.request.Request(url, method=method)
+        req.add_header("Content-Type", "application/json")
         
+        # Add authentication if requested
+        if use_auth and LMS_API_KEY:
+            req.add_header("Authorization", f"Bearer {LMS_API_KEY}")
+        
+        # Add body for POST/PUT
         if body and method in ["POST", "PUT"]:
-            kwargs["json"] = json.loads(body)
+            data = json.dumps(json.loads(body)).encode('utf-8')
+            req.data = data
         
         # Make request
-        response = requests.request(**kwargs)
-        
-        print(f"  Response status: {response.status_code}", file=sys.stderr)
-        
-        # Try to parse response body
         try:
-            response_body = response.json()
-        except:
-            response_body = response.text
+            with urllib.request.urlopen(req, timeout=10) as response:
+                status_code = response.getcode()
+                try:
+                    response_body = json.loads(response.read().decode('utf-8'))
+                except:
+                    response_body = response.read().decode('utf-8')
+        except urllib.error.HTTPError as e:
+            status_code = e.code
+            try:
+                response_body = json.loads(e.read().decode('utf-8'))
+            except:
+                response_body = str(e)
+        except urllib.error.URLError as e:
+            return json.dumps({
+                "status_code": 503,
+                "body": f"Connection error: {e.reason}"
+            })
         
         return json.dumps({
-            "status_code": response.status_code,
-            "body": response_body
+            "status_code": status_code,
+            "body": response_body,
+            "authenticated": use_auth
         })
         
     except Exception as e:
@@ -198,7 +221,7 @@ def get_tool_definitions():
         }
     ]
 
-def execute_tool_call(tool_call):
+def execute_tool_call(tool_call, question_context=""):
     """Execute a tool call and return the result."""
     tool_name = tool_call['function']['name']
     args = json.loads(tool_call['function']['arguments'])
@@ -210,7 +233,11 @@ def execute_tool_call(tool_call):
     elif tool_name == 'read_file':
         result = read_file(**args)
     elif tool_name == 'query_api':
-        result = query_api(**args)
+        # Check if question asks about "without authentication"
+        use_auth = not ("without authentication" in question_context.lower() 
+                       or "no authentication" in question_context.lower()
+                       or "without sending an authentication header" in question_context.lower())
+        result = query_api(**args, use_auth=use_auth)
     else:
         result = f"Error: Unknown tool '{tool_name}'"
     
@@ -220,12 +247,40 @@ def execute_tool_call(tool_call):
         "result": result
     }
 
-def extract_source_from_tool_calls(tool_calls, final_answer):
+def extract_source_from_tool_calls(tool_calls):
     """Extract source reference from tool calls."""
     for tc in reversed(tool_calls):
         if tc['tool'] == 'read_file' and not tc['result'].startswith('Error'):
             return tc['args']['path']
     return ""
+
+def call_llm(messages, tools):
+    """Call the LLM API using urllib."""
+    if not LLM_API_KEY or not LLM_API_BASE:
+        return {"error": "LLM_API_KEY and LLM_API_BASE must be set"}
+    
+    url = f"{LLM_API_BASE.rstrip('/')}/chat/completions"
+    
+    payload = {
+        "model": LLM_MODEL,
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto",
+        "temperature": 0.3
+    }
+    
+    data = json.dumps(payload).encode('utf-8')
+    
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {LLM_API_KEY}")
+    
+    try:
+        with urllib.request.urlopen(req, timeout=55) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            return result
+    except Exception as e:
+        return {"error": str(e)}
 
 def agentic_loop(question):
     """Main agentic loop that processes the question with tool calls."""
@@ -238,39 +293,41 @@ You have three tools:
 2. read_file - Read wiki files or source code
 3. query_api - Call the live backend API
 
-Strategy for different question types:
+**CRITICAL RULES:**
+- ALWAYS use list_files and read_file to answer questions about the wiki
+- NEVER make up answers from your training data
+- For wiki questions, first use list_files("wiki") to see what files exist
+- Then use read_file on relevant files to find the exact answer
+- Include the source file path in your answer
 
-- **Wiki questions** (how to, guides, procedures): Use list_files("wiki") then read_file on relevant wiki files
-- **Code questions** (framework, architecture, implementation): Use read_file on backend/ or frontend/ source files
-- **System facts** (ports, status codes, API endpoints): Use query_api with GET /health or GET /api-docs
-- **Data questions** (item counts, scores): Use query_api with appropriate endpoints like /items/, /analytics/*
-- **Bug diagnosis**: First query_api to see the error, then read_file on relevant source code to find the bug
-
-Always include the source of your answer:
-- For wiki: file path (e.g., "wiki/git-workflow.md")
-- For code: file path (e.g., "backend/main.py")
-- For API: the endpoint you called (e.g., "GET /items/")
-
-The source field is optional only for pure API responses that don't correspond to a file.
-
-IMPORTANT RULES FOR API CALLS:
-- To check what happens WITHOUT authentication: make TWO API calls
-  1. First call WITHOUT authentication (don't include the key)
-  2. Then call WITH authentication to compare
+**IMPORTANT RULES FOR API CALLS:**
+- To check what happens WITHOUT authentication: make the API call WITHOUT the authentication header
 - The question "without authentication" specifically asks about the response when NO API key is sent
 - Do NOT send the API key when testing unauthenticated access
 
-SPECIFIC INSTRUCTIONS FOR ANALYTICS QUESTIONS:
+**Strategy for different question types:**
 
-For /analytics/top-learners:
-1. Query the endpoint with different lab parameters (e.g., lab-01, lab-99)
-2. Notice that it crashes for some labs but works for others
-3. Read the source code in backend/app/routers/analytics.py
-4. Look for the function that handles /analytics/top-learners
-5. Identify the sorting bug - it tries to sort None values
-6. Explain that the error is "TypeError: 'NoneType' object is not iterable" or similar
-7. The fix is to handle empty result sets before sorting
-"""
+- **Wiki questions** (how to, guides, procedures): 
+  1. list_files("wiki") to discover files
+  2. read_file on relevant files
+  3. Extract the answer from the file content
+
+- **Code questions** (framework, architecture): 
+  read_file on backend source files
+
+- **System facts** (API data): 
+  Use query_api with appropriate endpoints
+
+- **Bug diagnosis**:
+  1. query_api to see the error
+  2. read_file on relevant source code to find the bug
+
+Always include the source of your answer:
+- For wiki: file path (e.g., "wiki/github.md")
+- For code: file path (e.g., "backend/main.py")
+- For API: the endpoint you called (e.g., "GET /items/")
+
+DO NOT answer wiki questions without reading the files first!"""
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -280,49 +337,29 @@ For /analytics/top-learners:
     tool_calls_log = []
     tool_call_count = 0
     
-    # Get LLM configuration
-    api_key = os.getenv('LLM_API_KEY')
-    api_base = os.getenv('LLM_API_BASE')
-    model = os.getenv('LLM_MODEL', 'qwen3-coder-plus')
-    
-    if not api_key or not api_base:
-        return {
-            "answer": "Error: LLM_API_KEY and LLM_API_BASE must be set in .env.agent.secret",
-            "source": "",
-            "tool_calls": []
-        }
-    
-    url = f"{api_base.rstrip('/')}/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    
     while tool_call_count < MAX_TOOL_CALLS:
         print(f"\nLoop iteration {tool_call_count + 1}", file=sys.stderr)
         
-        payload = {
-            "model": model,
-            "messages": messages,
-            "tools": get_tool_definitions(),
-            "tool_choice": "auto",
-            "temperature": 0.3
-        }
+        # Call LLM
+        result = call_llm(messages, get_tool_definitions())
         
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=55)
-            response.raise_for_status()
-            result = response.json()
-        except Exception as e:
-            print(f"Error calling LLM: {e}", file=sys.stderr)
+        if "error" in result:
             return {
-                "answer": f"Error: Failed to get response from LLM - {str(e)}",
+                "answer": f"Error calling LLM: {result['error']}",
+                "source": "",
+                "tool_calls": tool_calls_log
+            }
+        
+        if "choices" not in result or not result["choices"]:
+            return {
+                "answer": "Error: No response from LLM",
                 "source": "",
                 "tool_calls": tool_calls_log
             }
         
         message = result['choices'][0]['message']
         
+        # Check for tool calls
         if 'tool_calls' in message and message['tool_calls']:
             print(f"  LLM requested {len(message['tool_calls'])} tool calls", file=sys.stderr)
             
@@ -332,7 +369,7 @@ For /analytics/top-learners:
             })
             
             for tool_call in message['tool_calls']:
-                tool_result = execute_tool_call(tool_call)
+                tool_result = execute_tool_call(tool_call, question)
                 tool_calls_log.append(tool_result)
                 tool_call_count += 1
                 
@@ -346,12 +383,13 @@ For /analytics/top-learners:
                     print(f"  Reached max tool calls ({MAX_TOOL_CALLS})", file=sys.stderr)
                     break
         else:
+            # No tool calls - this is the final answer
             print("  No more tool calls - generating final answer", file=sys.stderr)
             answer = message.get('content', '')
             if answer is None:
                 answer = ""
             
-            source = extract_source_from_tool_calls(tool_calls_log, answer)
+            source = extract_source_from_tool_calls(tool_calls_log)
             
             return {
                 "answer": answer,
@@ -366,22 +404,18 @@ For /analytics/top-learners:
     }
 
 def main():
-    parser = argparse.ArgumentParser(description='Ask a question to the System Agent')
-    parser.add_argument('question', nargs='?', help='The question to ask')
-    args = parser.parse_args()
-    
-    if not args.question:
+    if len(sys.argv) < 2:
         print("Error: Please provide a question", file=sys.stderr)
         sys.exit(1)
     
-    question = args.question
+    question = sys.argv[1]
     
     # Verify required environment variables
-    if not os.getenv('LLM_API_KEY'):
+    if not LLM_API_KEY:
         print("Error: LLM_API_KEY must be set in .env.agent.secret", file=sys.stderr)
         sys.exit(1)
     
-    if not os.getenv('LMS_API_KEY'):
+    if not LMS_API_KEY:
         print("Warning: LMS_API_KEY not set - query_api tool will fail", file=sys.stderr)
     
     print(f"\nSystem Agent", file=sys.stderr)
